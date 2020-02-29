@@ -11,7 +11,7 @@ Cross-origin resource sharing (CORS) for [Rocket](https://rocket.rs/) applicatio
 ## Requirements
 
 - Nightly Rust
-- Rocket >= 0.4
+- Updated to rocket master branch
 
 If you are using Rocket 0.3, use the `0.3.0` version of this crate.
 
