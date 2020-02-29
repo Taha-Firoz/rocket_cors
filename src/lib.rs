@@ -29,7 +29,7 @@ might work, but they are subject to the minimum that Rocket sets.
 Add the following to Cargo.toml:
 
 ```toml
-rocket_cors = "0.5.0-beta-2"
+rocket_cors = "0.5.1"
 ```
 
 To use the latest `master` branch, for example:
@@ -45,7 +45,7 @@ the [`CorsOptions`] struct that is described below. If you would like to disable
 change your `Cargo.toml` to:
 
 ```toml
-rocket_cors = { version = "0.5.0", default-features = false }
+rocket_cors = { version = "0.5.1", default-features = false }
 ```
 
 ## Usage
@@ -258,7 +258,6 @@ See the [example](https://github.com/lawliet89/rocket_cors/blob/master/examples/
     while_true
 )]
 #![allow(
-    legacy_directory_ownership,
     missing_copy_implementations,
     missing_debug_implementations,
     unknown_lints,
@@ -812,12 +811,12 @@ impl ParsedAllowedOrigins {
             exact.into_iter().partition(|(_, url)| url.is_tuple());
 
         if !opaque.is_empty() {
-            Err(Error::OpaqueAllowedOrigin(
+            return Err(Error::OpaqueAllowedOrigin(
                 opaque
                     .into_iter()
                     .map(|(original, _)| original.to_string())
                     .collect(),
-            ))?
+            ));
         }
 
         let exact = tuple.into_iter().map(|(_, url)| url).collect();
@@ -907,7 +906,7 @@ pub type AllowedHeaders = AllOrSome<HashSet<HeaderFieldName>>;
 impl AllowedHeaders {
     /// Allow some headers
     pub fn some(headers: &[&str]) -> Self {
-        AllOrSome::Some(headers.iter().map(|s| s.to_string().into()).collect())
+        AllOrSome::Some(headers.iter().map(|s| (*s).to_string().into()).collect())
     }
 
     /// Allows all headers
@@ -1143,7 +1142,7 @@ impl CorsOptions {
     /// Validates if any of the settings are disallowed, incorrect, or illegal
     pub fn validate(&self) -> Result<(), Error> {
         if self.allowed_origins.is_all() && self.send_wildcard && self.allow_credentials {
-            Err(Error::CredentialsWithWildcardOrigin)?;
+            return Err(Error::CredentialsWithWildcardOrigin);
         }
 
         Ok(())
@@ -1152,6 +1151,60 @@ impl CorsOptions {
     /// Creates a [`Cors`] struct that can be used to respond to requests or as a Rocket Fairing
     pub fn to_cors(&self) -> Result<Cors, Error> {
         Cors::from_options(self)
+    }
+
+    /// Sets the allowed origins
+    pub fn allowed_origins(mut self, allowed_origins: AllowedOrigins) -> Self {
+        self.allowed_origins = allowed_origins;
+        self
+    }
+
+    /// Sets the allowed methodes
+    pub fn allowed_methods(mut self, allowed_methods: AllowedMethods) -> Self {
+        self.allowed_methods = allowed_methods;
+        self
+    }
+
+    /// Sets the allowed headers
+    pub fn allowed_headers(mut self, allowed_headers: AllowedHeaders) -> Self {
+        self.allowed_headers = allowed_headers;
+        self
+    }
+
+    /// Marks if credentials are allowed
+    pub fn allow_credentials(mut self, allow_credentials: bool) -> Self {
+        self.allow_credentials = allow_credentials;
+        self
+    }
+
+    /// Sets the expose headers
+    pub fn expose_headers(mut self, expose_headers: HashSet<String>) -> Self {
+        self.expose_headers = expose_headers;
+        self
+    }
+
+    /// Sets the max age
+    pub fn max_age(mut self, max_age: Option<usize>) -> Self {
+        self.max_age = max_age;
+        self
+    }
+
+    /// Marks if wildcards are send
+    pub fn send_wildcard(mut self, send_wildcard: bool) -> Self {
+        self.send_wildcard = send_wildcard;
+        self
+    }
+
+    /// Sets the base of the fairing route
+    pub fn fairing_route_base<S: Into<String>>(mut self, fairing_route_base: S) -> Self {
+        self.fairing_route_base = fairing_route_base.into();
+        self
+    }
+
+    /// Sets the rank of the fairing route
+    pub fn fairing_route_rank(mut self, fairing_route_rank: isize) ->  Self {
+        self.fairing_route_rank = fairing_route_rank;
+        self
     }
 }
 
@@ -1296,7 +1349,7 @@ impl Response {
     /// Consumes the CORS, set expose_headers to
     /// passed headers and returns changed CORS
     fn exposed_headers(mut self, headers: &[&str]) -> Self {
-        self.expose_headers = headers.iter().map(|s| s.to_string().into()).collect();
+        self.expose_headers = headers.iter().map(|s| (*s).to_string().into()).collect();
         self
     }
 
@@ -1317,7 +1370,7 @@ impl Response {
     /// Consumes the CORS, set allow_headers to
     /// passed headers and returns changed CORS
     fn headers(mut self, headers: &[&str]) -> Self {
-        self.allow_headers = headers.iter().map(|s| s.to_string().into()).collect();
+        self.allow_headers = headers.iter().map(|s| (*s).to_string().into()).collect();
         self
     }
 
@@ -1680,7 +1733,7 @@ fn validate_allowed_method(
 ) -> Result<(), Error> {
     let &AccessControlRequestMethod(ref request_method) = method;
     if !allowed_methods.iter().any(|m| m == request_method) {
-        Err(Error::MethodNotAllowed(method.0.to_string()))?
+        return Err(Error::MethodNotAllowed(method.0.to_string()));
     }
 
     // TODO: Subset to route? Or just the method requested for?
@@ -1698,7 +1751,7 @@ fn validate_allowed_headers(
         AllOrSome::All => Ok(()),
         AllOrSome::Some(ref allowed_headers) => {
             if !headers.is_empty() && !headers.is_subset(allowed_headers) {
-                Err(Error::HeadersNotAllowed)?
+                return Err(Error::HeadersNotAllowed);
             }
             Ok(())
         }
@@ -1991,7 +2044,7 @@ mod tests {
             allow_credentials: true,
             expose_headers: ["Content-Type", "X-Custom"]
                 .iter()
-                .map(|s| s.to_string())
+                .map(|s| (*s).to_string())
                 .collect(),
             ..Default::default()
         }
@@ -2024,6 +2077,18 @@ mod tests {
         let cors = make_invalid_options();
 
         cors.validate().unwrap();
+    }
+
+    #[test]
+    fn cors_options_from_builder_pattern() {
+        let allowed_origins = AllowedOrigins::some_exact(&["https://www.acme.com"]);
+        let cors_options_from_builder = CorsOptions::default()
+            .allowed_origins(allowed_origins)
+            .allowed_methods(vec![http::Method::Get].into_iter().map(From::from).collect())
+            .allowed_headers(AllowedHeaders::some(&[&"Authorization", "Accept"]))
+            .allow_credentials(true)
+            .expose_headers(["Content-Type", "X-Custom"].iter().map(|s| (*s).to_string()).collect());
+        assert_eq!(cors_options_from_builder, make_cors_options());
     }
 
     /// Check that the the default deserialization matches the one returned by `Default::default`
